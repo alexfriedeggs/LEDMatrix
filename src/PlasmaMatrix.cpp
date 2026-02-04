@@ -2,8 +2,8 @@
 
 PlasmaMatrix::PlasmaMatrix()
 {
-    this->backgroundModeRelativeBrightness = BACKGROUND_MODE_RELATIVE_BRIGHTNESS;
-    this->foregroundModeRelativeBrightness = FOREGROUND_MODE_RELATIVE_BRIGHTNESS;
+    this->backgroundModeRelativeBrightness = BACKGROUND_MODE_RELATIVE_BRIGHTNESS_PLASMA;
+    this->foregroundModeRelativeBrightness = FOREGROUND_MODE_RELATIVE_BRIGHTNESS_PLASMA;
     // set dafaults
     this->backgroundMode.store(true);
     this->currentRelativeBrightness.store(this->backgroundModeRelativeBrightness);
@@ -35,7 +35,7 @@ void PlasmaMatrix::calcNewStates()
             v += cos16(y * (128 - wibble) + time_counter);
             v += sin16(y * x * cos8(-time_counter) / 8);
 
-            currentColor = ColorFromPalette(currentPalette, (v >> 8), scaledBrightness); // currentBlendType);
+            currentColor = ColorFromPalette(currentPalette, (v >> 8), scaledBrightness);
             bufferPrimary[x][y] = rgbTo565(currentColor.r, currentColor.g, currentColor.b);
         }
     }

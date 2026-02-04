@@ -5,8 +5,8 @@
 
 #include "Matrix.h"
 
-#define BACKGROUND_MODE_RELATIVE_BRIGHTNESS 0.6f
-#define FOREGROUND_MODE_RELATIVE_BRIGHTNESS 1.0f
+#define BACKGROUND_MODE_RELATIVE_BRIGHTNESS_GAME 0.7f
+#define FOREGROUND_MODE_RELATIVE_BRIGHTNESS_GAME 1.0f
 #define UNDERPOPULATION_DEATH_CHANCE 99
 #define OVERPOPULATION_DEATH_CHANCE 95
 // 1. Any live cell with less than two live neighbours has UNDERPOPULATION_DEATH_CHANCE%
@@ -54,7 +54,7 @@ private:
 
     // influence of previous cell color on new color (0-255)
     // 0= no influence, 255 = full influence
-    uint8_t prevCellInfluence = 128; 
+    uint8_t prevCellInfluence = 200; 
 
     // update the colors from the current HSV values
     void updateColorsFromHSV();

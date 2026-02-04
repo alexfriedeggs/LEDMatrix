@@ -9,8 +9,8 @@
 #include "MODES.h"
 
 // MIN/MAX ADC values(0-4095) for ldr thresholds - determined experimentally
-#define LDR_LOWER_ADC 600 // below this turn OFF display
-#define LDR_UPPER_ADC 850 // above this turn ON display
+#define LDR_LOWER_ADC 50 // below this turn OFF display
+#define LDR_UPPER_ADC 100 // above this turn ON display
 
 // Handles user inputs via two rotary encoders and an LDR for ambient light sensing.
 // Encoder1 sets brightness (0-255), Encoder2 sets hue (0-65535).

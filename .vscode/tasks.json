@@ -1,0 +1,19 @@
+{
+    // Place your custom VS Code tasks here
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Open GitHub Repo in Browser",
+            "type": "shell",
+            "command": "start https://github.com/alexfriedeggs/LEDMatrix",
+            "problemMatcher": [],
+            "group": "none",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared"
+            }
+        }
+    ]
+}

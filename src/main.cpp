@@ -16,6 +16,7 @@
 
 #define WIFI_SSID "PLUSNET-PSQZ"
 #define WIFI_PASSWORD "d67f7e27f4"
+#define WIFI_IP_GATEWAY 
 
 #define GY21_SDA 8 //  Data I2C connection to GY-21 module
 #define GY21_SCL 9 //  Clock I2C connection to GY-21 module
@@ -31,8 +32,8 @@
 
 #define TEMPERATURE_FONT Roboto_Black_22
 #define HUMIDITY_FONT Led_Matrix_Font_5x3
-#define TEMPERATURE_COLOR_DEFAULT 0xFFFF // Bright white
-#define HUMIDITY_COLOR_DEFAULT 0xFFFF    // Bright white
+#define TEMPERATURE_COLOR_DEFAULT 0xFFE5 // default text colour
+#define HUMIDITY_COLOR_DEFAULT 0xFD05    // default text colour
 #define COLOURED_TEXT_SATURATION 100     // Saturation for coloured text
 
 #define POLLING_INTERVAL_MS 50 // Input polling interval in milliseconds
@@ -80,8 +81,11 @@ void setup()
   pixel.begin();
   pixel.setBrightness(0);
 
-  otaHandler = new OTAHandler(WIFI_SSID, WIFI_PASSWORD, 30000); // try to reconnect every 30 seconds after disconnect
-  gameLifeMatrix = new GameLifeMatrix(45, true);                // 45% initial density, edge wrap enabled
+  otaHandler = new OTAHandler(WIFI_SSID, WIFI_PASSWORD,
+                              "LEDMATRIXBOX", // hostname for mDNS
+                              30000);         // try to reconnect every 30 seconds after disconnect
+
+  gameLifeMatrix = new GameLifeMatrix(45, true); // 45% initial density, edge wrap enabled
   Logger::println("Game of Life Matrix initialized");
 
   plasmaMatrix = new PlasmaMatrix();
@@ -145,8 +149,31 @@ void loop()
 
   bool valueChanged = false; // for logging only
 
+  // check for OTA updates
+  otaHandler->handle();
+
   // read inputs
   inputHandler->getState(tempBrightness, tempHue, tempDisplayMode, tempTextMode, tempLDREnable);
+
+  // if panel enabled state changed by ldr, pause/resume matrix driver
+  if (panelEnabled != tempLDREnable)
+  {
+    panelEnabled = tempLDREnable;
+    if (panelEnabled) // resuming panel
+    {
+      // restore panel brightness and resume the driver
+      matrixDriver->resume();
+    }
+    else // pausing panel
+    {
+      // set panel brightness to 0 and pause the driver
+      matrixDriver->pause();
+      valueChanged = true;
+      // skip rest of loop
+      return;
+    }
+    valueChanged = true;
+  }
 
   // apply brightness if changed
   if (tempBrightness != brightness)
@@ -200,33 +227,13 @@ void loop()
     valueChanged = true;
   }
 
-  // if panel enabled state changed by ldr, pause/resume matrix driver
-  if (panelEnabled != tempLDREnable)
-  {
-    panelEnabled = tempLDREnable;
-    if (panelEnabled) // resuming panel
-    {
-      // restore panel brightness and resume the driver
-      matrixDriver->resume();
-    }
-    else // pausing panel
-    {
-      // set panel brightness to 0 and pause the driver
-      matrixDriver->pause();
-    }
-    valueChanged = true;
-  }
+  // delay to maintain desired main loop FPS - not critical timing
+  delayForFPS();
 
   // TESTING FUNCTIONS:
   testLogValues(valueChanged);
   // testSweepOnboardLED();
   rgbLedMirrorsTextMode();
-
-  // timing of main infinite loop
-  delayForFPS();
-
-  // handle OTA updates
-  otaHandler->handle();
 }
 
 // set new display mode based on current input handler mode

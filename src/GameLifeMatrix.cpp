@@ -2,8 +2,8 @@
 
 GameLifeMatrix::GameLifeMatrix(int initDensityPercentage, bool edgeWrap)
 {
-    this->backgroundModeRelativeBrightness = BACKGROUND_MODE_RELATIVE_BRIGHTNESS;
-    this->foregroundModeRelativeBrightness = FOREGROUND_MODE_RELATIVE_BRIGHTNESS;
+    this->backgroundModeRelativeBrightness = BACKGROUND_MODE_RELATIVE_BRIGHTNESS_GAME;
+    this->foregroundModeRelativeBrightness = FOREGROUND_MODE_RELATIVE_BRIGHTNESS_GAME;
 
     this->initDensityPercentage = initDensityPercentage;
     this->edgeWrap = edgeWrap;
@@ -225,9 +225,9 @@ void GameLifeMatrix::updateColorsFromHSV()
     uint8_t adjustedDeadVal = relativeBrightness * hsvValDead;
 
     aliveCol = hsvTo565(hsvHue, hsvSat, adjustedAliveVal);
-    justDiedCol = hsvTo565((hsvHue + 2000), hsvSat, adjustedJustDiedVal);
-    justBornCol = hsvTo565((hsvHue - 2000), hsvSat, adjustedJustBornVal);
-    deadCol = hsvTo565((hsvHue + 32768), hsvSat, adjustedDeadVal);
+    justDiedCol = hsvTo565((hsvHue + 5000), hsvSat, adjustedJustDiedVal);
+    justBornCol = hsvTo565((hsvHue - 5000), hsvSat, adjustedJustBornVal);
+    deadCol = hsvTo565((hsvHue + 16000), hsvSat, adjustedDeadVal);
 
     // also extract RGB values for future use in this frame
     getRGBFrom565(aliveCol, aliveRGB[0], aliveRGB[1], aliveRGB[2]);
