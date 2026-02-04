@@ -107,6 +107,12 @@ void MatrixDriver::enableTextDrawing(bool enable)
 void MatrixDriver::enableBackgroundDrawing(bool enable)
 {
     this->backgroundEnabled.store(enable);
+    // if turning off background drawing, ensure we clear screen first
+    if (xSemaphoreTake(matrixMutex, portMAX_DELAY) == pdTRUE)
+    {
+        panel->clearScreen();
+        xSemaphoreGive(matrixMutex);
+    }
 }
 
 // safely set a new matrix to use
@@ -158,7 +164,7 @@ void MatrixDriver::updateTask()
     while (true)
     {
         // 1. SYNC TO RTOS TIMING
-        //check if fpsChanged has changed and set fpsChanged to false
+        // check if fpsChanged has changed and set fpsChanged to false
         if (fpsChanged.exchange(false))
         {
             // recalc effective period

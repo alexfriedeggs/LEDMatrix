@@ -14,6 +14,9 @@ PlasmaMatrix::PlasmaMatrix()
 // Initialize the current state buffer with random values
 void PlasmaMatrix::initialise()
 {
+    //how bright the plasma appears when text on display (0-1.0f)
+    backgroundModeRelativeBrightness = 0.4f;
+
     // Set current FastLED palette
     currentPalette = RainbowColors_p;
 }

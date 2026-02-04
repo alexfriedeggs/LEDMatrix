@@ -9,9 +9,13 @@
 #include "GY21Sensor.h"
 #include "InputHandler.h"
 #include "MODES.h"
+#include "OTAHandler.h"
 
 #include "fonts/Roboto_Black_22.h"
 #include "fonts/Led_Matrix_Font_5x3.h"
+
+#define WIFI_SSID "PLUSNET-PSQZ"
+#define WIFI_PASSWORD "d67f7e27f4"
 
 #define GY21_SDA 8 //  Data I2C connection to GY-21 module
 #define GY21_SCL 9 //  Clock I2C connection to GY-21 module
@@ -44,22 +48,29 @@ Matrix *currentMatrix;          // Polymorphic pointer to current matrix
 Panel *panel;               // LED matrix panel
 MatrixDriver *matrixDriver; // Driver to update panel from matrix
 GY21Sensor *gy21Sensor;     // Temperature and humidity sensor
-InputHandler *inputHandler; // Input handler for brightness control
+InputHandler *inputHandler; // Input handler for brightness, hue, modes
+OTAHandler *otaHandler;     // OTA update handler
 
 const int textOnlyFPS = 10; // desired frames per second
 const int gameLifeFPS = 15; // desired frames per second
 const int plasmaFPS = 40;   // desired frames per second
 const int mainLoopFPS = 40; // desired main loop FPS
 
-void setNewMode();
-void testSweepOnboardLED();
+void setNewDisplayMode();
 void delayForFPS();
 
+// TESTING functions //////////////////////////////
+void testSweepOnboardLED();
+void testLogValues(bool valueChanged);
+void rgbLedMirrorsTextMode();
+///////////////////////////////////////////////////
+
 bool panelEnabled = true;
-uint8_t brightness = 255;               // Default brightness level
-uint16_t hue = 32768;                   // Default hue value
-int displayMode = MODES::GAME_AND_TEXT; // Default mode
-int textMode = MODES::TEXT_MODE_WHITE;  // Default text colour mode
+uint8_t brightness = 255;               // brightness level
+uint16_t hue = 32768;                   // hue value
+uint16_t textHue = 32768;               // text hue value
+int displayMode = MODES::GAME_AND_TEXT; // mode
+int textMode = MODES::TEXT_MODE_WHITE;  // text colour mode
 
 void setup()
 {
@@ -69,7 +80,8 @@ void setup()
   pixel.begin();
   pixel.setBrightness(0);
 
-  gameLifeMatrix = new GameLifeMatrix(45, true); // 45% initial density, edge wrap enabled
+  otaHandler = new OTAHandler(WIFI_SSID, WIFI_PASSWORD, 30000); // try to reconnect every 30 seconds after disconnect
+  gameLifeMatrix = new GameLifeMatrix(45, true);                // 45% initial density, edge wrap enabled
   Logger::println("Game of Life Matrix initialized");
 
   plasmaMatrix = new PlasmaMatrix();
@@ -98,7 +110,8 @@ void setup()
   Logger::println("InputHandler initialized");
 
   // create MatrixDriver to update panel from matrix at FPS
-  matrixDriver = new MatrixDriver(gameLifeFPS, panel, currentMatrix, gy21Sensor, &TEMPERATURE_FONT, &HUMIDITY_FONT,
+  matrixDriver = new MatrixDriver(gameLifeFPS, panel, currentMatrix, gy21Sensor,
+                                  &TEMPERATURE_FONT, &HUMIDITY_FONT,
                                   TEMPERATURE_COLOR_DEFAULT, HUMIDITY_COLOR_DEFAULT);
   // adjust text positions and offsets for better visual centering
   matrixDriver->setTemperatureTextXOffset(-1);
@@ -124,17 +137,11 @@ void setup()
 
 void loop()
 {
-  // testSweepOnboardLED();
-
   uint8_t tempBrightness;
   uint16_t tempHue;
   int tempDisplayMode;
   int tempTextMode;
   bool tempLDREnable;
-
-  static uint16_t rgbLedHue = 0;  // 0-65535
-  static uint8_t rgbLedSat = 255; // 0-255
-  static uint8_t rgbLedVal = 255; // 0-255
 
   bool valueChanged = false; // for logging only
 
@@ -142,22 +149,58 @@ void loop()
   inputHandler->getState(tempBrightness, tempHue, tempDisplayMode, tempTextMode, tempLDREnable);
 
   // apply brightness if changed
-  if (tempBrightness != brightness) // brightness changed
+  if (tempBrightness != brightness)
   {
     brightness = tempBrightness;
     matrixDriver->setPanelBrightness(brightness);
     valueChanged = true;
   }
 
-  // apply new display mode if changed
-  if (tempDisplayMode != displayMode) // new mode selected
+  // apply new text hue if changed
+  if (tempHue != textHue)
   {
-    displayMode = tempDisplayMode;
-    setNewMode();
+    textHue = tempHue;
+    if (tempTextMode == MODES::TEXT_MODE_WHITE)
+    {
+      matrixDriver->setTemperatureFontColor(TEMPERATURE_COLOR_DEFAULT);
+      matrixDriver->setHumidityFontColor(HUMIDITY_COLOR_DEFAULT);
+    }
+    else
+    {
+      // coloured text mode
+      matrixDriver->setTemperatureFontColor(currentMatrix->hsvTo565(textHue, COLOURED_TEXT_SATURATION, 255));
+      matrixDriver->setHumidityFontColor(currentMatrix->hsvTo565(textHue, COLOURED_TEXT_SATURATION, 255));
+    }
     valueChanged = true;
   }
 
-  // if panel enabled state changed, pause/resume matrix driver
+  // apply new display mode if changed
+  if (tempDisplayMode != displayMode)
+  {
+    displayMode = tempDisplayMode;
+    setNewDisplayMode();
+    valueChanged = true;
+  }
+
+  // apply new text mode if changed
+  if (tempTextMode != textMode)
+  {
+    textMode = tempTextMode;
+    if (tempTextMode == MODES::TEXT_MODE_WHITE)
+    {
+      matrixDriver->setTemperatureFontColor(TEMPERATURE_COLOR_DEFAULT);
+      matrixDriver->setHumidityFontColor(HUMIDITY_COLOR_DEFAULT);
+    }
+    else
+    {
+      // coloured text mode
+      matrixDriver->setTemperatureFontColor(currentMatrix->hsvTo565(textHue, COLOURED_TEXT_SATURATION, 255));
+      matrixDriver->setHumidityFontColor(currentMatrix->hsvTo565(textHue, COLOURED_TEXT_SATURATION, 255));
+    }
+    valueChanged = true;
+  }
+
+  // if panel enabled state changed by ldr, pause/resume matrix driver
   if (panelEnabled != tempLDREnable)
   {
     panelEnabled = tempLDREnable;
@@ -174,109 +217,60 @@ void loop()
     valueChanged = true;
   }
 
-  // TESTING ///////////////////////////////////////////////////////
-  static const char *modeNames[MODES::TOTAL_MODES] = {
-      "TEXT_ONLY",
-      "GAME_AND_TEXT",
-      "PLASMA_AND_TEXT",
-      "GAME_ONLY",
-      "PLASMA_ONLY"};
-  if (valueChanged)
-  {
-    Logger::printf("Brightness Level: %d\n", brightness);
-    Logger::printf("Panel Enabled: %s\n", panelEnabled ? "Yes" : "No");
-    Logger::printf("Current Mode: %d: %s\n", displayMode, modeNames[displayMode]);
-    Logger::printf("Current Hue: %d\n", hue);
-    Logger::printf("Text Mode: %d\n", textMode);
-  }
-  // every second display ldr adc value for testing
-  static unsigned long lastLDRLogTime = 0;
-  if (millis() - lastLDRLogTime >= 1000)
-  {
-    lastLDRLogTime = millis();
-    Logger::printf("Current LDR ADC Value: %d\n", inputHandler->getCurrentLDRValue());
-  }
+  // TESTING FUNCTIONS:
+  testLogValues(valueChanged);
+  // testSweepOnboardLED();
+  rgbLedMirrorsTextMode();
 
-  /////////////////////////////////////////////////////////////////
-
-  // change text colour if needed
-  // Show RGB led uf panelEnabled. and set colour to current hue if mode enabled
-  if (panelEnabled)
-  {
-    // update rgbLedHue value for onboard LED
-    rgbLedHue = tempHue;
-    if (tempTextMode == MODES::TEXT_MODE_WHITE)
-    {
-      // text white mode
-      matrixDriver->setTemperatureFontColor(0xFFFF); // white
-      matrixDriver->setHumidityFontColor(0xFFFF);    // white
-
-      rgbLedSat = 0; // Onboard RGB LED white (no saturation but full brightness)
-    }
-    else
-    {
-      // text colour mode
-      matrixDriver->setTemperatureFontColor(pixel.ColorHSV(tempHue, COLOURED_TEXT_SATURATION, 255));
-      matrixDriver->setHumidityFontColor(pixel.ColorHSV(tempHue, COLOURED_TEXT_SATURATION, 255));
-
-      rgbLedSat = 255; // Onboard RGB LED full colour
-    }
-    // Convert HSV to RGB and set LED color
-    uint32_t color = pixel.gamma32(pixel.ColorHSV(rgbLedHue, rgbLedSat, rgbLedVal));
-    pixel.setPixelColor(0, color);
-    pixel.setBrightness(3); // Optional: adjust brightness dynamically
-    pixel.show();
-  }
-  else
-  {
-    // Turn off the LED if the panel is not enabled
-    pixel.setPixelColor(0, 0);
-    pixel.show();
-  }
-
+  // timing of main infinite loop
   delayForFPS();
+
+  // handle OTA updates
+  otaHandler->handle();
 }
 
-// set new mode based on current input handler mode
-void setNewMode()
+// set new display mode based on current input handler mode
+void setNewDisplayMode()
 {
   switch (displayMode)
   {
   case MODES::TEXT_ONLY:
+    currentMatrix = gameLifeMatrix;         // do this now for when we switch again so
+    matrixDriver->setMatrix(currentMatrix); // we have valid gamelife matrix AS SOON AS
+    currentMatrix->setBackgroundMode(true); // mode is switched next time
     matrixDriver->setFPS(textOnlyFPS);
     matrixDriver->enableBackgroundDrawing(false);
     matrixDriver->enableTextDrawing(true);
     break;
   case MODES::GAME_AND_TEXT:
     currentMatrix = gameLifeMatrix;
+    matrixDriver->setMatrix(currentMatrix);
     currentMatrix->setBackgroundMode(true);
     matrixDriver->setFPS(gameLifeFPS);
-    matrixDriver->setMatrix(currentMatrix);
     matrixDriver->enableBackgroundDrawing(true);
     matrixDriver->enableTextDrawing(true);
     break;
   case MODES::PLASMA_AND_TEXT:
     currentMatrix = plasmaMatrix;
+    matrixDriver->setMatrix(currentMatrix);
     currentMatrix->setBackgroundMode(true);
     matrixDriver->setFPS(plasmaFPS);
-    matrixDriver->setMatrix(currentMatrix);
     matrixDriver->enableBackgroundDrawing(true);
     matrixDriver->enableTextDrawing(true);
     break;
   case MODES::GAME_ONLY:
     currentMatrix = gameLifeMatrix;
+    matrixDriver->setMatrix(currentMatrix);
     currentMatrix->setBackgroundMode(false);
     matrixDriver->setFPS(gameLifeFPS);
-    matrixDriver->setMatrix(currentMatrix);
     matrixDriver->enableBackgroundDrawing(true);
     matrixDriver->enableTextDrawing(false);
     break;
   case MODES::PLASMA_ONLY:
     currentMatrix = plasmaMatrix;
-    currentMatrix->setBackgroundMode(false);
-
-    matrixDriver->setFPS(plasmaFPS);
     matrixDriver->setMatrix(currentMatrix);
+    currentMatrix->setBackgroundMode(false);
+    matrixDriver->setFPS(plasmaFPS);
     matrixDriver->enableBackgroundDrawing(true);
     matrixDriver->enableTextDrawing(false);
     break;
@@ -300,13 +294,77 @@ void delayForFPS()
   lastLoopTime = currentLoopTime;
 }
 
+// TESTING :: log salient values if changed to serial monitor
+void testLogValues(bool valueChanged)
+{
+  // TESTING ///////////////////////////////////////////////////////
+  static const char *modeNames[MODES::TOTAL_MODES] = {
+      "TEXT_ONLY",
+      "GAME_AND_TEXT",
+      "PLASMA_AND_TEXT",
+      "GAME_ONLY",
+      "PLASMA_ONLY"};
+  if (valueChanged)
+  {
+    Logger::printf("Panel Enabled: %s\n", panelEnabled ? "Yes" : "No");
+    Logger::printf("Brightness Level: %d\n", brightness);
+    Logger::printf("Current Mode: %d: %s\n", displayMode, modeNames[displayMode]);
+    Logger::printf("Current Hue: %d\n", hue);
+    Logger::printf("Text Hue: %d\n", textHue);
+    Logger::printf("Text Mode: %d\n", textMode);
+  }
+  // every second display ldr adc value for testing
+  static unsigned long lastLDRLogTime = 0;
+  if (millis() - lastLDRLogTime >= 1000)
+  {
+    lastLDRLogTime = millis();
+    Logger::printf("Current LDR ADC Value: %d\n", inputHandler->getCurrentLDRValue());
+  }
+}
+
+// set onboard RGB LED to mirror text mode colour
+void rgbLedMirrorsTextMode()
+{
+  static uint16_t rgbLedHue = 0;  // 0-65535
+  static uint8_t rgbLedSat = 255; // 0-255
+  static uint8_t rgbLedVal = 255; // 0-255
+
+  // Show RGB led if panelEnabled. and set colour to current text hue if mode enabled
+  if (panelEnabled)
+  {
+    // update rgbLedHue value for onboard LED
+    rgbLedHue = textHue;
+    if (textMode == MODES::TEXT_MODE_WHITE)
+    {
+      // text white mode we set rgb led to white
+      rgbLedSat = 0; // (no saturation but full brightness)
+    }
+    else
+    {
+      // text colour mode - we set rgb to text hue
+      rgbLedSat = 255; // Onboard RGB LED full colour
+    }
+    // Convert HSV to RGB and set LED color
+    uint32_t color = pixel.gamma32(pixel.ColorHSV(rgbLedHue, rgbLedSat, rgbLedVal));
+    pixel.setPixelColor(0, color);
+    pixel.setBrightness(3); // Optional: adjust brightness dynamically
+    pixel.show();
+  }
+  else
+  {
+    // Turn off the LED if the panel is not enabled
+    pixel.setPixelColor(0, 0);
+    pixel.show();
+  }
+}
+
 // simple test function to sweep colors on the onboard RGB LED. shows signs of life
 void testSweepOnboardLED()
 {
   // Simple HSV rainbow cycle on the onboard RGB LED to show signs of life
   static uint16_t hsvHue = 0;  // 0-65535
   static uint8_t hsvSat = 255; // 0-255
-  static uint8_t hsvVal = 255; // 0-255
+  static uint8_t hsvVal = 100; // 0-255
 
   // Only show LED if panel is enabled
   if (panelEnabled)
@@ -314,7 +372,6 @@ void testSweepOnboardLED()
     // Convert HSV to RGB and set LED color
     uint32_t color = pixel.gamma32(pixel.ColorHSV(hsvHue, hsvSat, hsvVal));
     pixel.setPixelColor(0, color);
-    pixel.setBrightness(3); // Optional: adjust brightness dynamically
     pixel.show();
     hsvHue += 16; // Smooth step (smaller = slower transition)
   }

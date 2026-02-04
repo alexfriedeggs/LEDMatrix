@@ -46,15 +46,15 @@ private:
 
     // HSV values for color generation
     uint16_t hsvHue = 0;
-    uint8_t hsvSat = 220;
+    uint8_t hsvSat = 255;
     uint8_t hsvVal = 225;
     uint8_t hsvValJustDied = (hsvVal / 3) * 2;
     uint8_t hsvValJustBorn = 255;
-    uint8_t hsvValDead = 125;
+    uint8_t hsvValDead = 80;
 
     // influence of previous cell color on new color (0-255)
     // 0= no influence, 255 = full influence
-    uint8_t prevCellInfluence = 20; 
+    uint8_t prevCellInfluence = 128; 
 
     // update the colors from the current HSV values
     void updateColorsFromHSV();
