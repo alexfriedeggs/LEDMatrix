@@ -9,6 +9,8 @@
 #include <atomic>
 #include "Logger.h"
 
+#define CALIBRATION_OFFSET_TEMP -1.0f // empirically determined offset to calibrate temperature readings
+
 // I2C interface for GY-21 temp/humidity sensor module (SHT21/Si7021)
 // Usage:
 //     GY21Sensor gy21(SDA_PIN, SCL_PIN, UPDATE_INTERVAL_MS);

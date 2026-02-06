@@ -55,15 +55,15 @@ private:
     }
 
     // relative brightnesses of each state (0-1.0f, multiplied by palette color brightness)
-    float aliveBrightness = 1.0f;
+    float aliveBrightness = 0.9f;
     float justBornBrightness = 1.0f;
     float justDiedBrightness = 0.7f;
     float deadBrightness = 0.3f;
 
     // Current frame palette indices
     int alivePalInd; // changes each frame
-    int justBornPalIndOffset = 20;
-    int justDiedPalIndOffset = -20;
+    int justBornPalIndOffset = 50;
+    int justDiedPalIndOffset = -50;
     int deadPalIndOffset = 128;
 
     // Current frame colors

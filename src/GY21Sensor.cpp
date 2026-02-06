@@ -85,7 +85,7 @@ void GY21Sensor::readSensor()
 {
     if (gy21.read())
     {
-        float newTemp = gy21.getTemperature();
+        float newTemp = gy21.getTemperature() + CALIBRATION_OFFSET_TEMP; // apply calibration offset
         float newHumidity = gy21.getHumidity();
 
         // only update if values have changed significantly

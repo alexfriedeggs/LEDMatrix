@@ -15,13 +15,12 @@
 #include "fonts/Roboto_Black_22.h"
 #include "fonts/Led_Matrix_Font_5x3.h"
 
-// LOGGING MASTER TOGGLE //
+// LOGGING MASTER TOGGLE - set to false to disable all logging, true to enable //
 #define ENABLE_LOGGING true
-///////////////////////////
+/////////////////////////////////////////////////////////////////////////////////
 
 #define WIFI_SSID "PLUSNET-PSQZ"
 #define WIFI_PASSWORD "d67f7e27f4"
-#define WIFI_IP_GATEWAY
 
 #define GY21_SDA 8 //  Data I2C connection to GY-21 module
 #define GY21_SCL 9 //  Clock I2C connection to GY-21 module
@@ -112,7 +111,7 @@ void setup()
   panel = new Panel(brightness, true); // brightness 0-255, double buffering enabled
   Logger::println("Panel initialized");
 
-  gy21Sensor = new GY21Sensor(GY21_SDA, GY21_SCL, 1000); // update every 1 second
+  gy21Sensor = new GY21Sensor(GY21_SDA, GY21_SCL, 500); // update twice a second
   Logger::println("GY21Sensor initialized");
 
   inputHandler = new InputHandler(POLLING_INTERVAL_MS,
@@ -185,6 +184,7 @@ void loop()
       matrixDriver->pause();
       valueChanged = true;
       // skip rest of loop
+      delayForFPS();
       return;
     }
     valueChanged = true;
@@ -199,8 +199,8 @@ void loop()
   }
 
   // apply new hue if changed - MODE-DEPENDENT
-  // the input hue is reset to textHue or hue
-  // InputHandler hue changes always update text hue in TEXT_ONLY mode, but in other modes they update main hue
+  // InputHandler hue changes update text hue in TEXT_ONLY mode, but in other modes they update main hue
+  //
   // TEXT_MODE: text colours can only be set in TEXT_ONLY mode, they are preserved after leaving TEXT_ONLY mode.
   if (displayMode == MODES::TEXT_ONLY)
   {
@@ -283,7 +283,7 @@ void setNewDisplayMode()
   switch (displayMode)
   {
   case MODES::TEXT_ONLY:
-    inputHandler->setHue(textHue);          // set input handler to monitor text hue
+    inputHandler->setHue(textHue);          // set input handler to monitor text hue.
     currentMatrix = gameLifeMatrix;         // do this now for when we switch again so
     matrixDriver->setMatrix(currentMatrix); // we have valid gamelife matrix AS SOON AS
     currentMatrix->setBackgroundMode(true); // mode is switched next time

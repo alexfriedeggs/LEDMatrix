@@ -77,7 +77,7 @@ OTAHandler::OTAHandler(const char *ssid, const char *password,
         else if (error == OTA_CONNECT_ERROR) Logger::println("Connect Failed");
         else if (error == OTA_RECEIVE_ERROR) Logger::println("Receive Failed");
         else if (error == OTA_END_ERROR) Logger::println("End Failed"); });
-    ArduinoOTA.setHostname(hostname);
+    ArduinoOTA.setHostname(hostname);   // vital for mDNS resolution during OTA updates
     ArduinoOTA.begin();
 }
 
