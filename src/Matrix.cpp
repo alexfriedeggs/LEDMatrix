@@ -16,3 +16,11 @@ uint16_t Matrix::hsvTo565(uint16_t hue, uint8_t sat, uint8_t val)
     uint8_t b = hsvColor & 0xFF;
     return rgbTo565(r, g, b);
 }
+
+// extract 8-bit r, g, b from 16-bit 565 color
+void Matrix::getRGBFrom565(uint16_t color, uint8_t &r, uint8_t &g, uint8_t &b)
+{
+    r = ((color >> 11) & 0x1F) << 3 | ((color >> 11) & 0x1F) >> 2;
+    g = ((color >> 5) & 0x3F) << 2 | ((color >> 5) & 0x3F) >> 4;
+    b = (color & 0x1F) << 3 | (color & 0x1F) >> 2;
+}

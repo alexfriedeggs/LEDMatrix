@@ -7,7 +7,7 @@ InputHandler::InputHandler(int pollingIntervalMS,
                              uint8_t minBright, uint8_t maxBright,
                              uint16_t minHue, uint16_t maxHue,
                              int16_t glitchFilterTimeMicroS, int16_t switchDebounceTimeMS,
-                             int startingDisplayMode, int startingTextMode,
+                             int startingDisplayMode, int startingMode2,
                              uint8_t startingBrightness, uint16_t startingHue)
 {
     this->pollingEnabled = false;
@@ -22,8 +22,11 @@ InputHandler::InputHandler(int pollingIntervalMS,
     this->brightness.store(startingBrightness);
     this->hue.store(startingHue);
     this->displayMode.store(startingDisplayMode);
-    this->textMode.store(startingTextMode);
+    this->mode2.store(startingMode2);
     this->ldrEnabled.store(true);
+
+    this->requestedNewHue.store(startingHue);
+    this->changeRequested.store(false);
 
     // Create mutex for inputs
     inputMutex = xSemaphoreCreateMutex();
@@ -42,13 +45,13 @@ InputHandler::InputHandler(int pollingIntervalMS,
     encoder2 = new RotaryEncoder(glitchFilterTimeMicroS, switchDebounceTimeMS,
                                  ENC_COLOR_A, ENC_COLOR_B, ENC_COLOR_SW);
 
-    // create a low-priority task to handle the encoder polling in the background
+    // create a high-priority task to handle the encoder polling in the background
     xTaskCreatePinnedToCore(
         InputHandler::pollingTaskWrapper, // Function that should be called
         "InputHandler Polling Task",       // Name of the task (for debugging)
         10000,                             // Stack size (bytes)
         this,                              // Parameter to pass
-        3,                                 // Task priority
+        3,                                 // Task priority // high priority for input handling
         &pollingTaskHandle,                // Task handle
         1                                  // Core to run the task on (0 or 1)
     );
@@ -92,9 +95,17 @@ void InputHandler::pollingTask()
             uint8_t tempBright;
             uint16_t tempHue;
             int tempDisplayMode;
-            int tempTextMode;
+            int tempMode2;
             bool tempLdrEnable;
-            getState(tempBright, tempHue, tempDisplayMode, tempTextMode, tempLdrEnable);
+
+            // check for overriding change request from enduser.e.g. main loop logic
+            if (changeRequested.exchange(false))
+            {
+                hue.store(requestedNewHue.load());
+                Logger::printf("InputHandler-Old hue: %d, New hue: %d\n", tempHue, requestedNewHue.load());
+            }
+            
+            getState(tempBright, tempHue, tempDisplayMode, tempMode2, tempLdrEnable);
 
             // first read ldr pin & update LDR enable state
             tempLdrEnable = calcLDREnable();
@@ -110,8 +121,8 @@ void InputHandler::pollingTask()
             // now check encoder2 switch press for secondary mode select
             if (encoder2->getDebouncedSwitchStateAndReset())
             {
-                tempTextMode = ( ((tempTextMode + 1) % 2)+ 10);
-                Logger::printf("Mode2 Select button pressed. New mode2: %d\n", tempTextMode);
+                tempMode2 = ( ((tempMode2 + 1) % 2)+ 10);
+                Logger::printf("Mode2 Select button pressed. New mode2: %d\n", tempMode2);
             }
 
             //  first calc new values based on encoder detent counts since last poll
@@ -126,6 +137,7 @@ void InputHandler::pollingTask()
             int b = (int)tempBright;
             // here we use the overflow to our advantage for hue wrapping
             uint16_t h = tempHue;
+
             b += accel1;
             h += accel2;
             // apply bounds-checking
@@ -140,7 +152,7 @@ void InputHandler::pollingTask()
             brightness.store(tempBright);
             hue.store(tempHue);
             displayMode.store(tempDisplayMode);
-            textMode.store(tempTextMode);
+            mode2.store(tempMode2);
             ldrEnabled.store(tempLdrEnable);
             xSemaphoreGive(inputMutex);
         }
@@ -150,7 +162,7 @@ void InputHandler::pollingTask()
 }
 
 // thread-safe getter for current values
-void InputHandler::getState(uint8_t &brightness, uint16_t &hue, int &displayMode, int &textMode, bool &ldrEnable)
+void InputHandler::getState(uint8_t &brightness, uint16_t &hue, int &displayMode, int &mode2, bool &ldrEnable)
 {
     // acquire mutex to ensure consistent read across all variables
     xSemaphoreTake(inputMutex, portMAX_DELAY);
@@ -158,7 +170,7 @@ void InputHandler::getState(uint8_t &brightness, uint16_t &hue, int &displayMode
     brightness = this->brightness.load();
     hue = this->hue.load();
     displayMode = this->displayMode.load();
-    textMode = this->textMode.load();
+    mode2 = this->mode2.load();
     ldrEnable = this->ldrEnabled.load();
 
     xSemaphoreGive(inputMutex);

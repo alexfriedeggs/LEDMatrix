@@ -38,6 +38,31 @@ public:
     // set panel brightness 0-255..note this is only applied to panel in the update task
     void setPanelBrightness(uint8_t brightness);
 
+    // request next palette for. this will be handled at start of next frame
+    void nextPalette()
+    {
+        colorChangeRequested.store(true);
+    }
+
+    // request new hue. this will be handled at start of next frame
+    void setHue(uint16_t hue)
+    {
+        this->hue.store(hue);
+        colorChangeRequested.store(true); 
+    }   
+
+    // toggle wheteher we're cycling or not. this is thread-safe
+    void toggleCycling()
+    {
+        bool current = matrixCurrent->getCycling();
+        matrixCurrent->setCycling(!current);
+    }
+
+    bool isCycling()
+    {
+        return matrixCurrent->getCycling();
+    }
+
     // Text related functions
     void setTemperatureText(const char *text);
     void setTemperatureTextPosition(uint8_t x, uint8_t y);
@@ -63,6 +88,9 @@ private:
     std::atomic<bool> textEnabled;
     std::atomic<bool> backgroundEnabled;
     std::atomic<uint8_t> panelBrightness; // 0-255  
+
+    std::atomic<bool> colorChangeRequested;
+    std::atomic<uint16_t> hue; // 0-65535 for full HSV hue range
 
     std::atomic<int> updateIntervalMS; // polling interval in milliseconds, calculated from FPS
     std::atomic<bool> fpsChanged;

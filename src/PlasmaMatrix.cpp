@@ -7,6 +7,8 @@ PlasmaMatrix::PlasmaMatrix()
     // set dafaults
     this->backgroundMode.store(true);
     this->currentRelativeBrightness.store(this->backgroundModeRelativeBrightness);
+    this->currentPaletteIndex.store(0);
+    this->currentPalette = palettes[0];
 
     initialise();
 }
@@ -14,7 +16,7 @@ PlasmaMatrix::PlasmaMatrix()
 // Initialize the current state buffer with random values
 void PlasmaMatrix::initialise()
 {
-    //how bright the plasma appears when text on display (0-1.0f)
+    // how bright the plasma appears when text on display (0-1.0f)
     backgroundModeRelativeBrightness = 0.4f;
 
     // Set current FastLED palette
@@ -23,6 +25,7 @@ void PlasmaMatrix::initialise()
 
 void PlasmaMatrix::calcNewStates()
 {
+    currentPalette = palettes[currentPaletteIndex.load()];
     uint8_t scaledBrightness = static_cast<uint8_t>(currentRelativeBrightness.load() * 255);
 
     for (int x = 0; x < MATRIX_ARRAY_WIDTH; x++)
@@ -39,17 +42,19 @@ void PlasmaMatrix::calcNewStates()
             bufferPrimary[x][y] = rgbTo565(currentColor.r, currentColor.g, currentColor.b);
         }
     }
-
     ++time_counter;
-    ++cycles;
 
-    if (cycles >= 1024)
+    // cycle through palettes every 1024 frames if cycling is enabled
+    if (cycling.load())
     {
-        time_counter = 0;
-        cycles = 0;
-        currentPalette = palettes[random(0, sizeof(palettes) / sizeof(palettes[0]))];
+        ++cycles;
+        if (cycles >= 1024)
+        {
+            time_counter = 0;
+            cycles = 0;
+            currentPaletteIndex.store(random(0, sizeof(palettes) / sizeof(palettes[0])));
+        }
     }
-
 }
 
 PlasmaMatrix::~PlasmaMatrix()

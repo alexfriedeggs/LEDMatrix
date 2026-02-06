@@ -1,6 +1,6 @@
-#include "GameLifeMatrix.h"
+#include "GameLifeMatrix2.h"
 
-GameLifeMatrix::GameLifeMatrix(int initDensityPercentage, bool edgeWrap)
+GameLifeMatrix2::GameLifeMatrix2(int initDensityPercentage, bool edgeWrap)
 {
     this->backgroundModeRelativeBrightness = BACKGROUND_MODE_RELATIVE_BRIGHTNESS_GAME;
     this->foregroundModeRelativeBrightness = FOREGROUND_MODE_RELATIVE_BRIGHTNESS_GAME;
@@ -12,26 +12,37 @@ GameLifeMatrix::GameLifeMatrix(int initDensityPercentage, bool edgeWrap)
     backgroundModeRelativeBrightness = 0.621f;
     this->backgroundMode.store(true);
     this->currentRelativeBrightness.store(this->backgroundModeRelativeBrightness);
-    this->cycling.store(true);
+
+    // Set starting FastLED palette
+    currentPaletteIndex.store(0);
+    alivePalInd = 0;
 
     initialise();
 }
 
 // Initialize the current state buffer with random values
-void GameLifeMatrix::initialise()
+void GameLifeMatrix2::initialise()
 {
     // uses internal heat-based random generator
     randomSeed(esp_random());
 
-    // Initialize colors
-    updateColorsFromHSV();
+    // calc the alive/dead/justBorn/justDied colors based on palette,index and brightness settings
+    calcFrameColors();
 
+    // initial alive/dead colors
+    uint16_t aliveCol = rgbTo565(aliveRGB.r, aliveRGB.g, aliveRGB.b);
+    uint16_t deadCol = rgbTo565(deadRGB.r, deadRGB.g, deadRGB.b);
+    alivePalInd = random(0, 255);   // start with random palette index
+
+    uint16_t color565;
     for (int x = 0; x < MATRIX_ARRAY_WIDTH; x++)
     {
         for (int y = 0; y < MATRIX_ARRAY_HEIGHT; y++)
         {
+            // boolean alive/dead states
             bufferBoolPrimary[x][y] = (random(0, 100) < initDensityPercentage) ? true : false;
             bufferBoolSecondary[x][y] = false;
+            // colors based on alive/dead states
             bufferPrimary[x][y] = bufferBoolPrimary[x][y] ? aliveCol : deadCol;
             bufferSecondary[x][y] = deadCol;
         }
@@ -39,7 +50,7 @@ void GameLifeMatrix::initialise()
 }
 
 // Calculate new states based on current states
-void GameLifeMatrix::calcNewStates()
+void GameLifeMatrix2::calcNewStates()
 {
     for (int x = 0; x < MATRIX_ARRAY_WIDTH; x++)
     {
@@ -63,15 +74,14 @@ void GameLifeMatrix::calcNewStates()
     std::swap(bufferBoolPrimary, bufferBoolSecondary);
     std::swap(bufferPrimary, bufferSecondary);
 
-    // colour base-values for next frame if needed
     if (cycling.load())
-        hsvHue += HUE_CYCLING_SHIFT; // increment hue for next frame if cycling
+        alivePalInd += 1; // increment palette index for next frame if needed
 
-    // Update colors based on current HSV values & store rgbs for next frame
-    updateColorsFromHSV();
+    // Update colors based on current palette and index & store rgbs for next frame
+    calcFrameColors();
 }
 
-int GameLifeMatrix::getLiveNeighborCount(int x, int y)
+int GameLifeMatrix2::getLiveNeighborCount(int x, int y)
 {
     int liveNeighbors = 0;
     for (int dx = -1; dx <= 1; dx++)
@@ -103,7 +113,7 @@ int GameLifeMatrix::getLiveNeighborCount(int x, int y)
     return liveNeighbors;
 }
 
-bool GameLifeMatrix::getNewState(int x, int y, int liveNeighbors)
+bool GameLifeMatrix2::getNewState(int x, int y, int liveNeighbors)
 {
     // Apply Conway's Game of Life rules
     bool currentState = bufferBoolPrimary[x][y];
@@ -152,43 +162,30 @@ bool GameLifeMatrix::getNewState(int x, int y, int liveNeighbors)
 
 // get the new color value for this cell based on previous state and current state
 // as well as new and prev colours
-uint16_t GameLifeMatrix::getNewColorValue(bool currentState, bool prevState, uint16_t prevColor)
+uint16_t GameLifeMatrix2::getNewColorValue(bool currentState, bool prevState, uint16_t prevColor)
 {
-    uint16_t baseColor;
-    uint8_t r1, g1, b1;
+    CRGB baseColorRGB;
 
     if (currentState)
     {
         if (prevState) // cell is alive and was alive
         {
-            baseColor = aliveCol;
-            r1 = aliveRGB[0];
-            g1 = aliveRGB[1];
-            b1 = aliveRGB[2];
+            baseColorRGB = aliveRGB;
         }
         else // cell is alive but was dead (just born)
         {
-            baseColor = justBornCol;
-            r1 = justBornRGB[0];
-            g1 = justBornRGB[1];
-            b1 = justBornRGB[2];
+            baseColorRGB = justBornRGB;
         }
     }
     else
     {
         if (prevState) // cell is dead but was alive (just died)
         {
-            baseColor = justDiedCol;
-            r1 = justDiedRGB[0];
-            g1 = justDiedRGB[1];
-            b1 = justDiedRGB[2];
+            baseColorRGB = justDiedRGB;
         }
         else // cell is dead and was dead
         {
-            baseColor = deadCol;
-            r1 = deadRGB[0];
-            g1 = deadRGB[1];
-            b1 = deadRGB[2];
+            baseColorRGB = deadRGB;
         }
     }
 
@@ -196,47 +193,63 @@ uint16_t GameLifeMatrix::getNewColorValue(bool currentState, bool prevState, uin
     if (prevCellInfluence > 0)
     {
         uint8_t rPrev, gPrev, bPrev;
+        // extract r, g, b from 565 color and convert to 8-bit
         getRGBFrom565(prevColor, rPrev, gPrev, bPrev);
-        uint8_t rNew = (r1 * (255 - prevCellInfluence) + rPrev * prevCellInfluence) >> 8; // >> 8 is divide by 256
-        uint8_t gNew = (g1 * (255 - prevCellInfluence) + gPrev * prevCellInfluence) >> 8;
-        uint8_t bNew = (b1 * (255 - prevCellInfluence) + bPrev * prevCellInfluence) >> 8;
+        // blend new color with previous color based on influence factor
+        uint8_t rNew = (baseColorRGB.r * (255 - prevCellInfluence) + rPrev * prevCellInfluence) >> 8; // >> 8 is divide by 256
+        uint8_t gNew = (baseColorRGB.g * (255 - prevCellInfluence) + gPrev * prevCellInfluence) >> 8;
+        uint8_t bNew = (baseColorRGB.b * (255 - prevCellInfluence) + bPrev * prevCellInfluence) >> 8;
+
         // static uint32_t callCount = 0;
         // callCount++;
         // if (callCount > 15000) // log every 15000 calls for debugging
         // {
         //     callCount = 0;
-        //     Logger::printf("Base Color R:%d G:%d B:%d\n", r1, g1, b1);
-        //     Logger::printf("Prev Color R:%d G:%d B:%d\n", rPrev, gPrev, bPrev);
-        //     Logger::printf("Influence: %d\n", prevCellInfluence);
-        //     Logger::printf("Blended Color R:%d G:%d B:%d\n", rNew, gNew, bNew);
+        //     Logger::printf("Palette Index: %d\n", alivePalInd);
+        //     Logger::printf("Base Color RGB: R:%d G:%d B:%d\n", baseColorRGB.r, baseColorRGB.g, baseColorRGB.b);
+        //     Logger::printf("Prev Color RGB: R:%d G:%d B:%d\n", rPrev, gPrev, bPrev);
+        //     Logger::printf("New Color RGB: R:%d G:%d B:%d\n", rNew, gNew, bNew);
         // }
+
+        // convert blended color back to 565 and return
         return rgbTo565(rNew, gNew, bNew);
     }
 
     // no influence, just return base color
-    return baseColor;
+    return rgbTo565(baseColorRGB.r, baseColorRGB.g, baseColorRGB.b);
 }
 
-// update the colors from the current HSV values once per frame
-void GameLifeMatrix::updateColorsFromHSV()
+// update the colors from the current palette and indices once per frame
+void GameLifeMatrix2::calcFrameColors()
 {
     float relativeBrightness = currentRelativeBrightness.load();
 
-    uint8_t adjustedAliveVal = relativeBrightness * hsvVal;
-    uint8_t adjustedJustBornVal = relativeBrightness * hsvValJustBorn;
-    uint8_t adjustedJustDiedVal = relativeBrightness * hsvValJustDied;
-    uint8_t adjustedDeadVal = relativeBrightness * hsvValDead;
+    uint8_t adjustedAliveBrightness = (uint8_t) (255 * relativeBrightness * aliveBrightness);
+    uint8_t adjustedJustBornBrightness = (uint8_t) (255 * relativeBrightness * justBornBrightness);
+    uint8_t adjustedJustDiedBrightness = (uint8_t) (255 * relativeBrightness * justDiedBrightness);
+    uint8_t adjustedDeadBrightness = (uint8_t) (255 * relativeBrightness * deadBrightness);
 
-    aliveCol = hsvTo565(hsvHue, hsvSat, adjustedAliveVal);
-    justDiedCol = hsvTo565((hsvHue + JUST_DIED_HUE_OFFSET), hsvSat, adjustedJustDiedVal);
-    justBornCol = hsvTo565((hsvHue + JUST_BORN_HUE_OFFSET), hsvSat, adjustedJustBornVal);
-    deadCol = hsvTo565((hsvHue + DEAD_HUE_OFFSET), hsvSat, adjustedDeadVal);
+    aliveRGB = ColorFromCurrentPalette(alivePalInd, adjustedAliveBrightness);
+    justDiedRGB = ColorFromCurrentPalette(justDiedPalIndOffset + alivePalInd, adjustedJustDiedBrightness);
+    justBornRGB = ColorFromCurrentPalette(justBornPalIndOffset + alivePalInd, adjustedJustBornBrightness);
+    deadRGB = ColorFromCurrentPalette(deadPalIndOffset + alivePalInd, adjustedDeadBrightness);
 
-    // also extract RGB values for future use in this frame
-    getRGBFrom565(aliveCol, aliveRGB[0], aliveRGB[1], aliveRGB[2]);
-    getRGBFrom565(justBornCol, justBornRGB[0], justBornRGB[1], justBornRGB[2]);
-    getRGBFrom565(justDiedCol, justDiedRGB[0], justDiedRGB[1], justDiedRGB[2]);
-    getRGBFrom565(deadCol, deadRGB[0], deadRGB[1], deadRGB[2]);
+    // every 50 frames log the color values for debugging
+    static int frameCount = 0;
+    frameCount++;
+    if (frameCount >= 50)
+    {        frameCount = 0;
+        Logger::printf("Current palette Index: %d\n", currentPaletteIndex.load());
+        Logger::printf("Alive Index in palette: %d\n", alivePalInd);
+        Logger::printf("Relative Brightness: %.2f\n", relativeBrightness);
+        Logger::printf("Adjusted Brightnesses - Alive: %d, JustBorn: %d, JustDied: %d, Dead: %d\n",
+                       adjustedAliveBrightness, adjustedJustBornBrightness, adjustedJustDiedBrightness, adjustedDeadBrightness);
+        Logger::printf("RGB colors: Alive R:%d G:%d B:%d | JustBorn R:%d G:%d B:%d | JustDied R:%d G:%d B:%d | Dead R:%d G:%d B:%d\n",
+                       aliveRGB[0], aliveRGB[1], aliveRGB[2],
+                       justBornRGB[0], justBornRGB[1], justBornRGB[2],
+                       justDiedRGB[0], justDiedRGB[1], justDiedRGB[2],
+                       deadRGB[0], deadRGB[1], deadRGB[2]);
+    }   
 
     // // every 10 frames log the color values for debugging
     // static int frameCount = 0;
@@ -257,6 +270,6 @@ void GameLifeMatrix::updateColorsFromHSV()
     // }
 }
 
-GameLifeMatrix::~GameLifeMatrix()
+GameLifeMatrix2::~GameLifeMatrix2()
 {
 }

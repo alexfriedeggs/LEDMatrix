@@ -9,7 +9,7 @@
 #include "MODES.h"
 
 // MIN/MAX ADC values(0-4095) for ldr thresholds - determined experimentally
-#define LDR_LOWER_ADC 50 // below this turn OFF display
+#define LDR_LOWER_ADC 50  // below this turn OFF display
 #define LDR_UPPER_ADC 100 // above this turn ON display
 
 // Handles user inputs via two rotary encoders and an LDR for ambient light sensing.
@@ -20,23 +20,31 @@ class InputHandler
 {
 public:
     InputHandler(int pollingIntervalMS,
-                  int ENC_BRIGHT_A, int ENC_BRIGHT_B, int ENC_BRIGHT_SW,
-                  int ENC_COLOR_A, int ENC_COLOR_B, int ENC_COLOR_SW,
-                  int ldrPin,
-                  uint8_t minBright = 0, uint8_t maxBright = 255,
-                  uint16_t minHue = 0, uint16_t maxHue = 65535,
-                  int16_t glitchFilterTimeMicroS = 10, int16_t switchDebounceTimeMS = 50,
-                  int startingDisplayMode = MODES::GAME_AND_TEXT,
-                  int startingTextMode = MODES::TEXT_MODE_WHITE,
-                  uint8_t startingBrightness = 255,
-                  uint16_t startingHue = 32768);
+                 int ENC_BRIGHT_A, int ENC_BRIGHT_B, int ENC_BRIGHT_SW,
+                 int ENC_COLOR_A, int ENC_COLOR_B, int ENC_COLOR_SW,
+                 int ldrPin,
+                 uint8_t minBright = 0, uint8_t maxBright = 255,
+                 uint16_t minHue = 0, uint16_t maxHue = 65535,
+                 int16_t glitchFilterTimeMicroS = 10, int16_t switchDebounceTimeMS = 50,
+                 int startingDisplayMode = MODES::GAME_AND_TEXT,
+                 int startingMode2 = MODES::MODE2_A,
+                 uint8_t startingBrightness = 255,
+                 uint16_t startingHue = 32768);
     ~InputHandler();
 
     void resume();
     void pause();
 
-    // thread-safe getter for brightness, hue, displayMode, textMode& ldrEnable
-    void getState(uint8_t &brightness, uint16_t &hue, int &displayMode, int &textMode, bool &ldrEnable);
+    // thread-safe getter for brightness, hue, displayMode, mode2 & ldrEnable
+    void getState(uint8_t &brightness, uint16_t &hue, int &displayMode, int &mode2, bool &ldrEnable);
+
+    // store new hue and request change at start of next frame
+    void setHue(uint16_t hue)
+    {
+        constrain(hue, minHue, maxHue); // ensure hue within bounds
+        this->requestedNewHue.store(hue);
+        changeRequested.store(true); // flag for update at start of next frame
+    }
 
     // TESTING ONLY //////////////////////
     // : read raw LDR ADC value
@@ -53,12 +61,15 @@ private:
     uint16_t maxHue;   // 0-65535
 
     // these variables can be accessed inside and outside the task, so are atomic
-    std::atomic<uint8_t> brightness; // brightness level (0-255)
-    std::atomic<uint16_t> hue;       // hue value (0-65535)
-    std::atomic<int> displayMode;    // current mode set by encoder
-    std::atomic<int> textMode;       // secondary mode if needed
-    std::atomic<bool> ldrEnabled;    // current panel enabled state based on LDR
-    SemaphoreHandle_t inputMutex;    // used when we want to read/update multiple atomics at once
+    std::atomic<uint8_t> brightness;       // brightness level (0-255)
+    std::atomic<uint16_t> hue;             // hue value (0-65535)
+    std::atomic<int> displayMode;          // current mode set by encoder
+    std::atomic<int> mode2;                // secondary mode if needed
+    std::atomic<bool> ldrEnabled;          // current panel enabled state based on LDR
+    std::atomic<uint16_t> requestedNewHue; // new hue value requested by encoder, to be applied at start of next frame
+    std::atomic<bool> changeRequested;     // flag to indicate if a change has been requested by enduser
+
+    SemaphoreHandle_t inputMutex; // used when we want to read/update multiple atomics at once
 
     // unrealistic initial value to force first read updates
     int ldrValue = -10000; // current LDR ADC value (0-4095)

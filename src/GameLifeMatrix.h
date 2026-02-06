@@ -5,10 +5,15 @@
 
 #include "Matrix.h"
 
-#define BACKGROUND_MODE_RELATIVE_BRIGHTNESS_GAME 0.7f
+#define BACKGROUND_MODE_RELATIVE_BRIGHTNESS_GAME 0.8f
 #define FOREGROUND_MODE_RELATIVE_BRIGHTNESS_GAME 1.0f
 #define UNDERPOPULATION_DEATH_CHANCE 99
 #define OVERPOPULATION_DEATH_CHANCE 95
+
+#define HUE_CYCLING_SHIFT 64
+#define JUST_BORN_HUE_OFFSET -6000
+#define JUST_DIED_HUE_OFFSET 6000
+#define DEAD_HUE_OFFSET 30000
 // 1. Any live cell with less than two live neighbours has UNDERPOPULATION_DEATH_CHANCE%
 // chance of dying due to underpopulation.
 // 2. Any live cell with two or three live neighbours lives on to the next generation.
@@ -25,6 +30,12 @@ public:
     ~GameLifeMatrix();
     void initialise() override;
     void calcNewStates() override;
+
+    void setHue(uint16_t hue) override
+    {
+        this->hsvHue = hue;
+        updateColorsFromHSV();
+    }
 
 private:
     bool edgeWrap = true;
@@ -67,9 +78,6 @@ private:
 
     // get the new color value for this cell based on previous state and current state
     uint16_t getNewColorValue(bool currentState, bool prevState, uint16_t prevColor);
-
-    // extract 8-bit r, g, b from 16-bit 565 color
-    void getRGBFrom565(uint16_t color, uint8_t &r, uint8_t &g, uint8_t &b);
 };
 
 #endif

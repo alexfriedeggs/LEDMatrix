@@ -11,6 +11,7 @@ MatrixDriver::MatrixDriver(int fps, Panel *panel, Matrix *matrix, GY21Sensor *gy
     this->enabled.store(false);
     this->textEnabled.store(true);
     this->backgroundEnabled.store(true);
+    this->colorChangeRequested.store(false);
 
     // initialise brightness to sync values. brightness normally set by potentiometer in runtime
     if (panel != nullptr)
@@ -65,7 +66,7 @@ MatrixDriver::MatrixDriver(int fps, Panel *panel, Matrix *matrix, GY21Sensor *gy
         "Matrix Update Task",            // Name of the task (for debugging)
         10000,                           // Stack size (bytes)
         this,                            // Parameter to pass
-        3,                               // Task priority - low priority for sensor updates
+        2,                               // Task priority // medium priority, above sensor and input handling but below critical tasks
         &updateTaskHandle,               // Task handle
         1                                // Core to run the task on (0 or 1)
     );
@@ -279,6 +280,13 @@ void MatrixDriver::updateTask()
         // if background drawing is enabled, then update matrix states & draw cells
         if (backgroundEnabled.load())
         {
+            // change palettes if needed and reset flag
+            if (colorChangeRequested.exchange(false))
+            {
+                matrix->nextPalette();      // if implemented, otherwise this will do nothing
+                matrix->setHue(hue.load()); // if implemented
+            }
+
             // 9. CALC NEW MATRIX STATES
             matrix->calcNewStates();
             tCalc = micros();

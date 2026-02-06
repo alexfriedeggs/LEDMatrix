@@ -32,7 +32,7 @@ GY21Sensor::GY21Sensor(int sda, int scl, int updateIntervalMS)
         "GY21Sensor Update Task",      // Name of the task (for debugging)
         10000,                         // Stack size (bytes)
         this,                          // Parameter to pass
-        1,                             // Task priority
+        1,                             // Task priority // lowest
         &updateTaskHandle,             // Task handle
         1                              // Core to run the task on (0 or 1)
     );
